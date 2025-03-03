@@ -1,0 +1,296 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: SAM Template for API Gateway and Lambda Functions.
+
+Resources:
+  ## IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource: '*'
+
+  ## Lambda Functions
+  LoginLambda:
+      Type: AWS::Serverless::Function
+      Properties:
+        FunctionName: LoginLambda
+        Handler: lambda_function.lambda_handler
+        Runtime: python3.11
+        MemorySize: 256
+        Timeout: 20  # Increase timeout in seconds
+        Role: !GetAtt LambdaExecutionRole.Arn
+        CodeUri: ./login/
+        Environment:
+          Variables:
+            DYNAMODB_TABLE: "Users"  # Replace with actual table name
+            SECRET_KEY: "your-secret-key"  # Replace with a strong, secure key
+            ALGORITHM: "HS256"  # Algorithm used for JWT encoding
+            ACCESS_TOKEN_EXPIRE_MINUTES: "60"  # Token expiry time in minutes
+
+  SignupLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: SignupLambda
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      MemorySize: 256
+      Timeout: 20  # Increase timeout in seconds
+      Role: !GetAtt LambdaExecutionRole.Arn
+      CodeUri: ./signup/
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: "Users"
+
+  ChatHistoryLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ChatHistoryLambda
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      MemorySize: 256
+      Timeout: 20  # Increase timeout in seconds
+      Role: !GetAtt LambdaExecutionRole.Arn
+      CodeUri: ./chathistory/
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: "Kokoro"
+
+  ChatLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ChatLambda
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.11
+      MemorySize: 256
+      Timeout: 20  # Increase timeout in seconds
+      Role: !GetAtt LambdaExecutionRole.Arn
+      CodeUri: ./chat/
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: "Kokoro"  # Replace with your actual DynamoDB table name
+          OLLAMA_URL: "https://kokoro.doctor/chat" # Replace with the actual Ollama API endpoint
+
+
+  ## API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowOrigin: "'https://kokoro.doctor'"
+        AllowMethods: "'GET, POST, OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+      DefinitionBody:
+        swagger: '2.0'
+        info:
+          title: ChatAPI
+        paths:
+          /login:
+            options:
+              responses:
+                '200':
+                  description: CORS support
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{ "statusCode": 200 }'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+                      method.response.header.Access-Control-Allow-Methods: "'POST, OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LoginLambda.Arn}/invocations'
+                httpMethod: POST
+                type: aws_proxy
+              responses:
+                default:
+                  statusCode: 200
+                  headers:
+                    Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+
+          /signup:
+            options:
+              responses:
+                '200':
+                  description: CORS support
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{ "statusCode": 200 }'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+                      method.response.header.Access-Control-Allow-Methods: "'POST, OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SignupLambda.Arn}/invocations'
+                httpMethod: POST
+                type: aws_proxy
+              responses:
+                default:
+                  statusCode: 200
+                  headers:
+                    Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+
+          /chathistory/{user_id}:
+            options:
+              responses:
+                '200':
+                  description: CORS support
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{ "statusCode": 200 }'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+                      method.response.header.Access-Control-Allow-Methods: "'GET, OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+            get:
+              parameters:
+                - name: user_id
+                  in: path
+                  required: true
+                  type: string
+              x-amazon-apigateway-integration:
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatHistoryLambda.Arn}/invocations'
+                httpMethod: GET
+                type: aws_proxy
+              responses:
+                default:
+                  statusCode: 200
+                  headers:
+                    Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+
+          /chat:
+            options:
+              responses:
+                '200':
+                  description: CORS support
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{ "statusCode": 200 }'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+                      method.response.header.Access-Control-Allow-Methods: "'POST, OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ChatLambda.Arn}/invocations'
+                httpMethod: POST
+                type: aws_proxy
+              responses:
+                default:
+                  statusCode: 200
+                  headers:
+                    Access-Control-Allow-Origin: "'https://kokoro.doctor'"
+
+  ## API Gateway Invoke Permissions
+  LoginLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LoginLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/login"
+
+  SignupLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SignupLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/signup"
+
+  ChatHistoryLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatHistoryLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/chathistory/*"
+
+  ChatLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/chat"
+  
+
+  ApiGatewayResourcePolicy:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ChatAPI
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: "execute-api:Invoke"
+            Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*"
+    
